@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Task } from '@/types';
+import { Task, Dependency } from '@/types';
 import { buildTaskTree, flattenTree, cn } from '@/lib/utils';
 import {
   addDays,
@@ -19,6 +19,7 @@ import {
 
 interface GanttChartProps {
   tasks: Task[];
+  dependencies?: Dependency[];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string | null) => void;
 }
@@ -35,6 +36,7 @@ const ROW_HEIGHT = 32;
 
 export function GanttChart({
   tasks,
+  dependencies = [],
   selectedTaskId,
   onSelectTask,
 }: GanttChartProps) {
@@ -332,6 +334,146 @@ export function GanttChart({
                 </div>
               );
             })}
+
+            {/* Dependency Lines (Arrows) */}
+            <svg
+              className="absolute inset-0 pointer-events-none z-10"
+              style={{ width: totalWidth, height: totalHeight }}
+            >
+              <defs>
+                <marker
+                  id="arrowhead-gray"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon
+                    points="0 0, 8 3, 0 6"
+                    fill="#6B7280"
+                  />
+                </marker>
+                <marker
+                  id="arrowhead-blue"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon
+                    points="0 0, 8 3, 0 6"
+                    fill="#3B82F6"
+                  />
+                </marker>
+                <marker
+                  id="arrowhead-red"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon
+                    points="0 0, 8 3, 0 6"
+                    fill="#EF4444"
+                  />
+                </marker>
+              </defs>
+              {dependencies.map((dep) => {
+                const predTask = flatTasks.find(t => t.id === dep.predecessorTaskId);
+                const succTask = flatTasks.find(t => t.id === dep.successorTaskId);
+                
+                if (!predTask || !succTask) return null;
+                
+                const predBar = getBarStyle(predTask);
+                const succBar = getBarStyle(succTask);
+                
+                if (!predBar || !succBar) return null;
+                
+                const predIndex = flatTasks.findIndex(t => t.id === dep.predecessorTaskId);
+                const succIndex = flatTasks.findIndex(t => t.id === dep.successorTaskId);
+                
+                // Determine if this is a schedule violation (successor starts before predecessor ends)
+                const isViolation = predTask.endDate && succTask.startDate && 
+                  new Date(succTask.startDate) < new Date(predTask.endDate);
+                
+                // Check if either task is selected
+                const isHighlighted = predTask.id === selectedTaskId || succTask.id === selectedTaskId;
+                
+                // Calculate connection points for FS (Finish-to-Start)
+                const startX = predBar.left + predBar.width;
+                const startY = predIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+                const endX = succBar.left;
+                const endY = succIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+                
+                // Determine line color and marker
+                let strokeColor = '#6B7280'; // default gray
+                let markerId = 'arrowhead-gray';
+                
+                if (isViolation) {
+                  strokeColor = '#EF4444'; // red for violations
+                  markerId = 'arrowhead-red';
+                } else if (isHighlighted) {
+                  strokeColor = '#3B82F6'; // blue for highlighted
+                  markerId = 'arrowhead-blue';
+                }
+                
+                // Create smooth path with right-angle turns
+                const horizontalGap = 12;
+                const cornerRadius = 4;
+                
+                let path = '';
+                if (endX > startX + horizontalGap * 2) {
+                  // Normal case: successor starts after predecessor ends
+                  const midX = startX + (endX - startX) / 2;
+                  
+                  if (startY === endY) {
+                    // Same row - simple horizontal line
+                    path = `M ${startX} ${startY} L ${endX - 4} ${endY}`;
+                  } else {
+                    // Different rows - use orthogonal path with rounded corners
+                    path = `M ${startX} ${startY} 
+                            L ${midX - cornerRadius} ${startY}
+                            Q ${midX} ${startY} ${midX} ${startY + (endY > startY ? cornerRadius : -cornerRadius)}
+                            L ${midX} ${endY - (endY > startY ? cornerRadius : -cornerRadius)}
+                            Q ${midX} ${endY} ${midX + cornerRadius} ${endY}
+                            L ${endX - 4} ${endY}`;
+                  }
+                } else {
+                  // Wrap around case: successor starts before predecessor ends
+                  const wrapGap = ROW_HEIGHT * 0.75;
+                  const wrapY = (endY > startY) 
+                    ? Math.max(startY, endY) + wrapGap 
+                    : Math.min(startY, endY) - wrapGap;
+                  
+                  path = `M ${startX} ${startY}
+                          L ${startX + horizontalGap - cornerRadius} ${startY}
+                          Q ${startX + horizontalGap} ${startY} ${startX + horizontalGap} ${startY + (wrapY > startY ? cornerRadius : -cornerRadius)}
+                          L ${startX + horizontalGap} ${wrapY - (wrapY > startY ? cornerRadius : -cornerRadius)}
+                          Q ${startX + horizontalGap} ${wrapY} ${startX + horizontalGap - cornerRadius} ${wrapY}
+                          L ${endX - horizontalGap + cornerRadius} ${wrapY}
+                          Q ${endX - horizontalGap} ${wrapY} ${endX - horizontalGap} ${wrapY + (endY > wrapY ? cornerRadius : -cornerRadius)}
+                          L ${endX - horizontalGap} ${endY - (endY > wrapY ? cornerRadius : -cornerRadius)}
+                          Q ${endX - horizontalGap} ${endY} ${endX - horizontalGap + cornerRadius} ${endY}
+                          L ${endX - 4} ${endY}`;
+                }
+                
+                return (
+                  <path
+                    key={dep.id}
+                    d={path}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={isHighlighted ? 2 : 1.5}
+                    markerEnd={`url(#${markerId})`}
+                    className="dependency-line"
+                    style={{ opacity: isHighlighted ? 1 : 0.7 }}
+                  />
+                );
+              })}
+            </svg>
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth';
 import { api } from '@/lib/api';
-import { Project, Task } from '@/types';
+import { Project, Task, Dependency } from '@/types';
 import { MainLayout } from '@/components/layout/main-layout';
 import { WbsTable } from '@/components/wbs/wbs-table';
 import { GanttChart } from '@/components/gantt/gantt-chart';
@@ -20,6 +20,7 @@ export default function ProjectDetailPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [isLoading, setIsLoading] = useState(true);
@@ -35,17 +36,21 @@ export default function ProjectDetailPage() {
 
   const fetchProjectData = async () => {
     try {
-      const [projectRes, tasksRes] = await Promise.all([
+      const [projectRes, tasksRes, depsRes] = await Promise.all([
         api.get(`/projects/${projectId}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         api.get(`/projects/${projectId}/tasks`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        api.get(`/projects/${projectId}/dependencies`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
 
       setProject(projectRes.data);
       setTasks(tasksRes.data.items);
+      setDependencies(depsRes.data.items || []);
     } catch (err) {
       console.error('Failed to fetch project data:', err);
     } finally {
@@ -223,6 +228,7 @@ export default function ProjectDetailPage() {
                 <div className="w-1/2 overflow-auto">
                   <GanttChart
                     tasks={tasks}
+                    dependencies={dependencies}
                     selectedTaskId={selectedTaskId}
                     onSelectTask={setSelectedTaskId}
                   />
@@ -243,6 +249,7 @@ export default function ProjectDetailPage() {
               <div className="h-full overflow-auto">
                 <GanttChart
                   tasks={tasks}
+                  dependencies={dependencies}
                   selectedTaskId={selectedTaskId}
                   onSelectTask={setSelectedTaskId}
                 />
