@@ -1,0 +1,33 @@
+{
+  "name": "wbs-progress-management",
+  "version": "1.0.0-mvp",
+  "description": "WBS Progress Management App - Internal project management with WBS and Gantt",
+  "private": true,
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev --workspace=api",
+    "dev:web": "npm run dev --workspace=web",
+    "build": "npm run build --workspace=api && npm run build --workspace=web",
+    "build:api": "npm run build --workspace=api",
+    "build:web": "npm run build --workspace=web",
+    "start": "concurrently \"npm run start:api\" \"npm run start:web\"",
+    "start:api": "npm run start:prod --workspace=api",
+    "start:web": "npm run start --workspace=web",
+    "db:generate": "npm run db:generate --workspace=api",
+    "db:push": "npm run db:push --workspace=api",
+    "db:migrate": "npm run db:migrate --workspace=api",
+    "db:seed": "npm run db:seed --workspace=api",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,347 @@
+// WBS Progress Management - Prisma Schema
+// Version: 1.0.0-mvp
+// Stack: SQLite (dev) / Azure SQL (prod)
+// Note: Using String instead of enum for SQLite compatibility
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+model User {
+  id          String   @id @default(uuid())
+  entraOid    String   @unique // Azure Entra Object ID
+  email       String   @unique
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  projectMembers ProjectMember[]
+  taskAssignees  TaskAssignee[]
+  timeLogs       TimeLog[]
+  comments       Comment[]
+  changeLogs     ChangeLog[]
+
+  @@map("users")
+}
+
+// ============================================
+// Project
+// ============================================
+
+model Project {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  startDate    DateTime?
+  endDate      DateTime?
+  timezone     String   @default("Asia/Tokyo")
+  autoSchedule Boolean  @default(true)
+  status       String   @default("Planning") // Planning, Active, OnHold, Done, Archived
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  members      ProjectMember[]
+  tasks        Task[]
+  dependencies Dependency[]
+  baselines    Baseline[]
+  deliverables Deliverable[]
+  teamsSetting TeamsSetting?
+
+  @@map("projects")
+}
+
+// ============================================
+// Project Member (RBAC)
+// ============================================
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   // Admin, PM, Manager, Contributor, Viewer
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+// ============================================
+// Task (WBS)
+// ============================================
+
+model Task {
+  id          String    @id @default(uuid())
+  projectId   String
+  parentId    String?
+  orderIndex  Int       @default(0)
+  type        String    @default("task") // task, summary, milestone
+  title       String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  progress    Int       @default(0) // 0-100
+  status      String    @default("NotStarted") // NotStarted, InProgress, Blocked, Done
+  priority    String?
+  estimatePd  Float?    // Estimated Person-Days
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  project              Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent               Task?            @relation("TaskHierarchy", fields: [parentId], references: [id])
+  children             Task[]           @relation("TaskHierarchy")
+  assignees            TaskAssignee[]
+  predecessorDeps      Dependency[]     @relation("PredecessorTask")
+  successorDeps        Dependency[]     @relation("SuccessorTask")
+  timeLogs             TimeLog[]
+  baselineTasks        BaselineTask[]
+  comments             Comment[]
+  taskDeliverables     TaskDeliverable[]
+
+  @@index([projectId])
+  @@index([parentId])
+  @@index([deletedAt])
+  @@map("tasks")
+}
+
+// ============================================
+// Task Assignee
+// ============================================
+
+model TaskAssignee {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@map("task_assignees")
+}
+
+// ============================================
+// Dependency (FS only in MVP)
+// ============================================
+
+model Dependency {
+  id                String   @id @default(uuid())
+  projectId         String
+  predecessorTaskId String
+  successorTaskId   String
+  type              String   @default("FS") // FS (Finish-to-Start)
+  lagDays           Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  predecessorTask Task    @relation("PredecessorTask", fields: [predecessorTaskId], references: [id], onDelete: Cascade)
+  successorTask   Task    @relation("SuccessorTask", fields: [successorTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorTaskId, successorTaskId])
+  @@index([projectId])
+  @@map("dependencies")
+}
+
+// ============================================
+// TimeLog (Actual PD)
+// ============================================
+
+model TimeLog {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  workDate  DateTime
+  pd        Float    // Person-Days worked
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([workDate])
+  @@map("time_logs")
+}
+
+// ============================================
+// Baseline & Snapshot
+// ============================================
+
+model Baseline {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  locked    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  // Relations
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  baselineTasks BaselineTask[]
+
+  @@index([projectId])
+  @@map("baselines")
+}
+
+model BaselineTask {
+  id         String    @id @default(uuid())
+  baselineId String
+  taskId     String
+  startDate  DateTime?
+  endDate    DateTime?
+  estimatePd Float?
+  progress   Int       @default(0)
+  status     String    @default("NotStarted") // NotStarted, InProgress, Blocked, Done
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  baseline Baseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([baselineId, taskId])
+  @@map("baseline_tasks")
+}
+
+// ============================================
+// Comment & Mention
+// ============================================
+
+model Comment {
+  id        String    @id @default(uuid())
+  taskId    String
+  userId    String
+  body      String
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("comments")
+}
+
+// ============================================
+// Change Log (Audit Trail)
+// ============================================
+
+model ChangeLog {
+  id         String   @id @default(uuid())
+  entityType String   // Project, Task, Dependency, etc.
+  entityId   String
+  userId     String
+  field      String
+  before     String?
+  after      String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("change_logs")
+}
+
+// ============================================
+// Deliverable (URL)
+// ============================================
+
+model Deliverable {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  url       String
+  type      String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskDeliverables TaskDeliverable[]
+
+  @@index([projectId])
+  @@map("deliverables")
+}
+
+model TaskDeliverable {
+  id            String   @id @default(uuid())
+  taskId        String
+  deliverableId String
+  createdAt     DateTime @default(now())
+
+  // Relations
+  task        Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, deliverableId])
+  @@map("task_deliverables")
+}
+
+// ============================================
+// Teams Integration
+// ============================================
+
+model TeamsSetting {
+  id                   String   @id @default(uuid())
+  projectId            String   @unique
+  enabled              Boolean  @default(false)
+  webhookUrlEncrypted  String?  // Encrypted/Key Vault reference
+  eventMention         Boolean  @default(true)
+  eventOverdue         Boolean  @default(true)
+  eventBaselineCreated Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("teams_settings")
+}
+
+// ============================================
+// Integration Log (Notification failures, etc.)
+// ============================================
+
+model IntegrationLog {
+  id              String   @id @default(uuid())
+  integrationType String   // Teams, Jira, etc.
+  projectId       String?
+  eventType       String
+  status          String   // success, failed, retrying
+  payload         String?  // JSON
+  errorMessage    String?
+  retryCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([integrationType, status])
+  @@index([createdAt])
+  @@map("integration_logs")
+}
