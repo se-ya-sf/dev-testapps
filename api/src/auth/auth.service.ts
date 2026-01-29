@@ -46,6 +46,7 @@ export class AuthService {
     email: string,
     displayName: string,
   ): Promise<UserWithRoles> {
+    // First try to find by entraOid
     let user = await this.prisma.user.findUnique({
       where: { entraOid },
       include: {
@@ -54,6 +55,31 @@ export class AuthService {
         },
       },
     });
+
+    // If not found by entraOid, try to find by email (for dev mode compatibility)
+    if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { email },
+        include: {
+          projectMembers: {
+            select: { projectId: true, role: true },
+          },
+        },
+      });
+      
+      if (user) {
+        // Update entraOid if user exists with different oid
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { entraOid, displayName },
+          include: {
+            projectMembers: {
+              select: { projectId: true, role: true },
+            },
+          },
+        });
+      }
+    }
 
     if (!user) {
       // JIT provisioning - create user on first login

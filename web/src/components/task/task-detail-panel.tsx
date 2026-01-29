@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Task, TaskStatus, Comment, TimeLog, ChangeLog } from '@/types';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/store/auth';
-import { formatDate, formatDateForInput, getStatusColor, cn } from '@/lib/utils';
+import { formatDate, cn } from '@/lib/utils';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -13,7 +13,7 @@ interface TaskDetailPanelProps {
   onUpdate: (updates: Partial<Task>) => Promise<void>;
 }
 
-type Tab = 'details' | 'timelogs' | 'comments' | 'history';
+type TabType = 'overview' | 'activity' | 'time' | 'relations';
 
 export function TaskDetailPanel({
   task,
@@ -22,7 +22,7 @@ export function TaskDetailPanel({
   onUpdate,
 }: TaskDetailPanelProps) {
   const { token } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<Tab>('details');
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Task>>({});
   const [comments, setComments] = useState<Comment[]>([]);
@@ -30,7 +30,9 @@ export function TaskDetailPanel({
   const [history, setHistory] = useState<ChangeLog[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
+  // Initialize edit data
   useEffect(() => {
     setEditData({
       title: task.title,
@@ -40,466 +42,482 @@ export function TaskDetailPanel({
       progress: task.progress,
       status: task.status,
       estimatePd: task.estimatePd,
-      priority: task.priority,
     });
   }, [task]);
 
+  // Fetch tab data
   useEffect(() => {
-    if (activeTab === 'comments') {
-      fetchComments();
-    } else if (activeTab === 'timelogs') {
-      fetchTimeLogs();
-    } else if (activeTab === 'history') {
-      fetchHistory();
-    }
-  }, [activeTab, task.id]);
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        if (activeTab === 'activity') {
+          const [commentsRes, historyRes] = await Promise.all([
+            api.get(`/tasks/${task.id}/comments`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+            api.get(`/tasks/${task.id}/history`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+          ]);
+          setComments(commentsRes.data.items || []);
+          setHistory(historyRes.data.items || []);
+        } else if (activeTab === 'time') {
+          const res = await api.get(`/tasks/${task.id}/time-logs`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setTimeLogs(res.data.items || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const fetchComments = async () => {
-    try {
-      const response = await api.get(`/tasks/${task.id}/comments`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setComments(response.data.items);
-    } catch (err) {
-      console.error('Failed to fetch comments:', err);
-    }
-  };
+    fetchData();
+  }, [activeTab, task.id, token]);
 
-  const fetchTimeLogs = async () => {
-    try {
-      const response = await api.get(`/tasks/${task.id}/time-logs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setTimeLogs(response.data.items);
-    } catch (err) {
-      console.error('Failed to fetch time logs:', err);
-    }
-  };
-
-  const fetchHistory = async () => {
-    try {
-      const response = await api.get(`/tasks/${task.id}/history`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setHistory(response.data.items);
-    } catch (err) {
-      console.error('Failed to fetch history:', err);
-    }
-  };
-
+  // Handle save
   const handleSave = async () => {
-    setIsLoading(true);
+    setIsSaving(true);
     try {
       await onUpdate(editData);
       setIsEditing(false);
     } catch (err) {
-      console.error('Failed to save:', err);
+      console.error('Failed to update task:', err);
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
+  // Handle add comment
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
-
+    
     try {
-      await api.post(
+      const res = await api.post(
         `/tasks/${task.id}/comments`,
         { body: newComment },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      setComments((prev) => [res.data, ...prev]);
       setNewComment('');
-      fetchComments();
     } catch (err) {
       console.error('Failed to add comment:', err);
     }
   };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'details', label: 'Details' },
-    { id: 'timelogs', label: 'Time Logs' },
-    { id: 'comments', label: 'Comments' },
-    { id: 'history', label: 'History' },
+  // Get status options
+  const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
+    { value: 'NotStarted', label: 'New', color: 'bg-gray-400' },
+    { value: 'InProgress', label: 'In progress', color: 'bg-blue-500' },
+    { value: 'Blocked', label: 'Blocked', color: 'bg-red-500' },
+    { value: 'Done', label: 'Closed', color: 'bg-green-500' },
   ];
+
+  // Get type display
+  const getTypeDisplay = () => {
+    switch (task.type) {
+      case 'summary':
+        return { icon: '📁', label: 'Phase', color: 'text-blue-600' };
+      case 'milestone':
+        return { icon: '◆', label: 'Milestone', color: 'text-green-600' };
+      default:
+        return { icon: '📋', label: 'Task', color: 'text-gray-600' };
+    }
+  };
+
+  const typeDisplay = getTypeDisplay();
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b">
-        <div className="flex justify-between items-start">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-gray-900">{task.title}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span
-                className={cn(
-                  'px-2 py-0.5 text-xs rounded-full',
-                  getStatusColor(task.status)
-                )}
-              >
-                {task.status}
-              </span>
-              <span className="text-sm text-gray-500 capitalize">{task.type}</span>
-            </div>
+      <div className="flex-shrink-0 border-b border-gray-200 bg-[#F8FAFB]">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={cn('text-lg', typeDisplay.color)}>{typeDisplay.icon}</span>
+            <span className="text-sm text-gray-500">{typeDisplay.label}</span>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-200"
           >
-            ✕
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex-shrink-0 border-b">
-        <div className="flex">
-          {tabs.map((tab) => (
+        {/* Title */}
+        <div className="px-4 pb-3">
+          {isEditing ? (
+            <input
+              type="text"
+              value={editData.title || ''}
+              onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+              className="w-full text-lg font-semibold text-gray-900 border border-[#1A67A3] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#1A67A3]"
+            />
+          ) : (
+            <h2 className="text-lg font-semibold text-gray-900 truncate">{task.title}</h2>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex px-4 gap-1">
+          {(['overview', 'activity', 'time', 'relations'] as TabType[]).map((tab) => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
               className={cn(
-                'px-4 py-2 text-sm font-medium border-b-2 -mb-px',
-                activeTab === tab.id
-                  ? 'text-primary-600 border-primary-600'
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
+                'px-3 py-2 text-sm font-medium rounded-t transition-colors',
+                activeTab === tab
+                  ? 'bg-white text-[#1A67A3] border-t border-l border-r border-gray-200'
+                  : 'text-gray-500 hover:text-gray-700'
               )}
             >
-              {tab.label}
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
-        {activeTab === 'details' && (
-          <div className="space-y-4">
-            {/* Edit/View Mode Toggle */}
-            <div className="flex justify-end">
+      <div className="flex-1 overflow-y-auto bg-white">
+        {activeTab === 'overview' && (
+          <div className="p-4 space-y-6">
+            {/* Status */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Status
+              </label>
               {isEditing ? (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setIsEditing(false)}
-                    className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isLoading}
-                    className="px-3 py-1 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {isLoading ? 'Saving...' : 'Save'}
-                  </button>
+                <select
+                  value={editData.status}
+                  onChange={(e) => setEditData({ ...editData, status: e.target.value as TaskStatus })}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3]"
+                >
+                  {statusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className={cn('w-3 h-3 rounded-full', statusOptions.find(s => s.value === task.status)?.color || 'bg-gray-400')} />
+                  <span className="text-sm text-gray-700">
+                    {statusOptions.find(s => s.value === task.status)?.label || task.status}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Progress */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Progress
+              </label>
+              {isEditing ? (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={editData.progress || 0}
+                    onChange={(e) => setEditData({ ...editData, progress: parseInt(e.target.value) })}
+                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#1A67A3]"
+                  />
+                  <span className="text-sm font-medium text-gray-700 w-12 text-right">
+                    {editData.progress || 0}%
+                  </span>
                 </div>
               ) : (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-                >
-                  Edit
-                </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full transition-all',
+                        task.progress >= 100 ? 'bg-green-500' : 'bg-[#1A67A3]'
+                      )}
+                      style={{ width: `${task.progress}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 w-12 text-right">
+                    {task.progress}%
+                  </span>
+                </div>
               )}
             </div>
 
-            {/* Fields */}
-            <div className="space-y-3">
-              {/* Description */}
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Description
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Start date
                 </label>
                 {isEditing ? (
-                  <textarea
-                    value={editData.description || ''}
-                    onChange={(e) =>
-                      setEditData((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
-                    rows={3}
-                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  <input
+                    type="date"
+                    value={editData.startDate || ''}
+                    onChange={(e) => setEditData({ ...editData, startDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3]"
                   />
                 ) : (
-                  <p className="text-sm text-gray-800">
-                    {task.description || '-'}
-                  </p>
+                  <p className="text-sm text-gray-700">{task.startDate ? formatDate(task.startDate) : '-'}</p>
                 )}
               </div>
-
-              {/* Dates */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Start Date
-                  </label>
-                  {isEditing && task.type !== 'summary' ? (
-                    <input
-                      type="date"
-                      value={formatDateForInput(editData.startDate || null)}
-                      onChange={(e) =>
-                        setEditData((prev) => ({
-                          ...prev,
-                          startDate: e.target.value || null,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                    />
-                  ) : (
-                    <p className="text-sm text-gray-800">
-                      {formatDate(task.startDate)}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    End Date
-                  </label>
-                  {isEditing && task.type !== 'summary' ? (
-                    <input
-                      type="date"
-                      value={formatDateForInput(editData.endDate || null)}
-                      onChange={(e) =>
-                        setEditData((prev) => ({
-                          ...prev,
-                          endDate: e.target.value || null,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                    />
-                  ) : (
-                    <p className="text-sm text-gray-800">
-                      {formatDate(task.endDate)}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Progress */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Progress
-                </label>
-                {isEditing && task.type !== 'summary' ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={editData.progress || 0}
-                      onChange={(e) =>
-                        setEditData((prev) => ({
-                          ...prev,
-                          progress: parseInt(e.target.value),
-                        }))
-                      }
-                      className="flex-1"
-                    />
-                    <span className="text-sm w-12">{editData.progress}%</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gray-200 rounded-full">
-                      <div
-                        className="h-full bg-primary-500 rounded-full"
-                        style={{ width: `${task.progress}%` }}
-                      />
-                    </div>
-                    <span className="text-sm w-12">{task.progress}%</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Status
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Finish date
                 </label>
                 {isEditing ? (
-                  <select
-                    value={editData.status}
-                    onChange={(e) =>
-                      setEditData((prev) => ({
-                        ...prev,
-                        status: e.target.value as TaskStatus,
-                      }))
-                    }
-                    className="w-full px-3 py-2 border rounded-md text-sm"
-                  >
-                    <option value="NotStarted">Not Started</option>
-                    <option value="InProgress">In Progress</option>
-                    <option value="Blocked">Blocked</option>
-                    <option value="Done">Done</option>
-                  </select>
+                  <input
+                    type="date"
+                    value={editData.endDate || ''}
+                    onChange={(e) => setEditData({ ...editData, endDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3]"
+                  />
                 ) : (
-                  <span
-                    className={cn(
-                      'px-2 py-1 text-xs rounded-full',
-                      getStatusColor(task.status)
-                    )}
-                  >
-                    {task.status}
-                  </span>
+                  <p className="text-sm text-gray-700">{task.endDate ? formatDate(task.endDate) : '-'}</p>
                 )}
               </div>
+            </div>
 
-              {/* Estimate PD */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Estimate (PD)
-                  </label>
-                  {isEditing ? (
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={editData.estimatePd || ''}
-                      onChange={(e) =>
-                        setEditData((prev) => ({
-                          ...prev,
-                          estimatePd: e.target.value
-                            ? parseFloat(e.target.value)
-                            : null,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                    />
-                  ) : (
-                    <p className="text-sm text-gray-800">
-                      {task.estimatePd ?? '-'}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Actual (PD)
-                  </label>
-                  <p className="text-sm text-gray-800">{task.actualPd ?? '-'}</p>
-                </div>
+            {/* Work estimate */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Estimated work
+                </label>
+                {isEditing ? (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={editData.estimatePd || ''}
+                    onChange={(e) => setEditData({ ...editData, estimatePd: parseFloat(e.target.value) || undefined })}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3]"
+                    placeholder="Person days"
+                  />
+                ) : (
+                  <p className="text-sm text-gray-700">{task.estimatePd ? `${task.estimatePd} pd` : '-'}</p>
+                )}
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Spent time
+                </label>
+                <p className="text-sm text-gray-700">{task.actualPd ? `${task.actualPd} pd` : '-'}</p>
+              </div>
+            </div>
 
-              {/* Warnings */}
-              {task.hasScheduleWarning && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <div className="flex items-center gap-2 text-yellow-800">
-                    <span>⚠️</span>
-                    <span className="text-sm font-medium">Schedule Warning</span>
-                  </div>
-                  <ul className="mt-1 text-sm text-yellow-700">
-                    {task.scheduleWarnings?.map((w, i) => (
-                      <li key={i}>• {w}</li>
-                    ))}
-                  </ul>
-                </div>
+            {/* Description */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Description
+              </label>
+              {isEditing ? (
+                <textarea
+                  value={editData.description || ''}
+                  onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                  rows={4}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3] resize-none"
+                  placeholder="Add a description..."
+                />
+              ) : (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {task.description || <span className="text-gray-400 italic">No description</span>}
+                </p>
               )}
             </div>
-          </div>
-        )}
 
-        {activeTab === 'timelogs' && (
-          <div className="space-y-4">
-            <div className="text-sm text-gray-600">
-              Total: {timeLogs.reduce((sum, log) => sum + log.pd, 0)} PD
-            </div>
-            {timeLogs.length === 0 ? (
-              <p className="text-sm text-gray-500">No time logs recorded.</p>
-            ) : (
-              <div className="space-y-2">
-                {timeLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-3 bg-gray-50 rounded-md text-sm"
-                  >
-                    <div className="flex justify-between">
-                      <span className="font-medium">{log.workDate}</span>
-                      <span className="text-primary-600">{log.pd} PD</span>
-                    </div>
-                    {log.note && (
-                      <p className="text-gray-600 mt-1">{log.note}</p>
-                    )}
+            {/* Schedule Warnings */}
+            {task.hasScheduleWarning && task.scheduleWarnings && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">Schedule warnings</p>
+                    <ul className="mt-1 text-sm text-amber-700">
+                      {task.scheduleWarnings.map((w, i) => (
+                        <li key={i}>• {w}</li>
+                      ))}
+                    </ul>
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {activeTab === 'comments' && (
-          <div className="space-y-4">
+        {activeTab === 'activity' && (
+          <div className="p-4">
             {/* Add comment */}
-            <div className="flex gap-2">
-              <input
-                type="text"
+            <div className="mb-4">
+              <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment... (use @email to mention)"
-                className="flex-1 px-3 py-2 border rounded-md text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleAddComment();
-                  }
-                }}
+                placeholder="Add a comment..."
+                rows={3}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1A67A3] focus:border-[#1A67A3] resize-none"
               />
               <button
                 onClick={handleAddComment}
                 disabled={!newComment.trim()}
-                className="px-3 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700 disabled:opacity-50"
+                className="mt-2 px-4 py-1.5 bg-[#1A67A3] text-white text-sm font-medium rounded hover:bg-[#155a8a] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Post
+                Comment
               </button>
             </div>
 
-            {/* Comments list */}
-            {comments.length === 0 ? (
-              <p className="text-sm text-gray-500">No comments yet.</p>
+            {/* Activity feed */}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1A67A3]"></div>
+              </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* Comments */}
                 {comments.map((comment) => (
-                  <div key={comment.id} className="p-3 bg-gray-50 rounded-md">
-                    <div className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span>User {comment.userId.slice(0, 8)}...</span>
-                      <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                  <div key={comment.id} className="flex gap-3">
+                    <div className="w-8 h-8 bg-[#1A67A3] rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                      U
                     </div>
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                      {comment.body}
-                    </p>
+                    <div className="flex-1">
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-sm text-gray-700">{comment.body}</p>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(comment.createdAt).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
                 ))}
+
+                {/* Change history */}
+                {history.map((change) => (
+                  <div key={change.id} className="flex gap-3 text-sm">
+                    <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 flex-shrink-0">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">
+                        <span className="font-medium">{change.field}</span> changed
+                        {change.before && <span className="text-gray-400"> from {change.before}</span>}
+                        {change.after && <span> to <span className="font-medium">{change.after}</span></span>}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(change.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {comments.length === 0 && history.length === 0 && (
+                  <p className="text-center text-gray-400 py-8">No activity yet</p>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {activeTab === 'history' && (
-          <div className="space-y-2">
-            {history.length === 0 ? (
-              <p className="text-sm text-gray-500">No history available.</p>
+        {activeTab === 'time' && (
+          <div className="p-4">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1A67A3]"></div>
+              </div>
             ) : (
-              history.map((log) => (
-                <div
-                  key={log.id}
-                  className="p-3 bg-gray-50 rounded-md text-sm"
-                >
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span className="font-medium">{log.field}</span>
-                    <span>{new Date(log.createdAt).toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <span className="text-red-600 line-through">
-                      {log.before || '(empty)'}
-                    </span>
-                    <span>→</span>
-                    <span className="text-green-600">
-                      {log.after || '(empty)'}
+              <>
+                {/* Summary */}
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Total logged</span>
+                    <span className="text-lg font-semibold text-[#1A67A3]">
+                      {timeLogs.reduce((sum, l) => sum + l.pd, 0).toFixed(1)} pd
                     </span>
                   </div>
                 </div>
-              ))
+
+                {/* Time log list */}
+                {timeLogs.length > 0 ? (
+                  <div className="space-y-2">
+                    {timeLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">
+                            {formatDate(log.workDate)}
+                          </p>
+                          {log.note && (
+                            <p className="text-xs text-gray-500 mt-0.5">{log.note}</p>
+                          )}
+                        </div>
+                        <span className="text-sm font-medium text-[#1A67A3]">
+                          {log.pd} pd
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-400 py-8">No time logged yet</p>
+                )}
+              </>
             )}
           </div>
+        )}
+
+        {activeTab === 'relations' && (
+          <div className="p-4">
+            <p className="text-center text-gray-400 py-8">
+              Relations feature coming soon
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Footer actions */}
+      <div className="flex-shrink-0 border-t border-gray-200 bg-[#F8FAFB] px-4 py-3">
+        {isEditing ? (
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex-1 px-4 py-2 bg-[#1A67A3] text-white text-sm font-medium rounded hover:bg-[#155a8a] disabled:opacity-50"
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={() => {
+                setIsEditing(false);
+                setEditData({
+                  title: task.title,
+                  description: task.description,
+                  startDate: task.startDate,
+                  endDate: task.endDate,
+                  progress: task.progress,
+                  status: task.status,
+                  estimatePd: task.estimatePd,
+                });
+              }}
+              className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="w-full px-4 py-2 bg-[#1A67A3] text-white text-sm font-medium rounded hover:bg-[#155a8a]"
+          >
+            Edit
+          </button>
         )}
       </div>
     </div>
