@@ -1,222 +1,315 @@
-# WBS Progress Management App
+# WBS プロジェクト管理アプリ
 
-## Project Overview
-- **Name**: WBS Progress Management
-- **Version**: 1.0.0-mvp
-- **Goal**: 社内のプロジェクト進捗管理を、WBS（階層タスク）とガントを中心に一元化
-- **Tech Stack**: Next.js + NestJS + Prisma + SQLite (dev) / Azure SQL (prod)
+OpenProjectライクな本格的WBS（Work Breakdown Structure）とガントチャートを備えたプロジェクト管理アプリケーションです。
 
-## Features (MVP)
+![Version](https://img.shields.io/badge/version-1.0.0--mvp-blue)
+![Tech Stack](https://img.shields.io/badge/stack-Next.js%20%2B%20NestJS%20%2B%20Prisma-green)
 
-### ✅ Implemented
-- **認証**: Entra ID OIDC対応 (開発モードではモック認証)
-- **認可**: プロジェクト単位RBAC (Admin/PM/Manager/Contributor/Viewer)
-- **プロジェクト管理**: 作成/一覧/更新
-- **WBS (階層タスク)**: CRUD、並び替え、インデント/アウトデント
-- **ガント表示**: WBSと同期、日/週/月ズーム
-- **依存関係**: FS（Finish→Start）+ ラグ（日）、循環検出
-- **スケジュール自動調整**: プロジェクト設定でON/OFF
-- **進捗管理**: % + ステータス（NotStarted/InProgress/Blocked/Done）
-- **工数管理**: 人日（PD）見積 + 実績（日次ログ）
-- **ベースライン**: スナップショット作成 + 差分表示
-- **コメント**: @メンション対応
-- **変更履歴**: フィールド差分
-- **Teams通知**: Incoming Webhook（mention/overdue/baselineCreated）
-- **Excel出力**: 報告用xlsx
-- **成果物**: URL紐づけ
+## 📸 スクリーンショット
 
-## Project Structure
+### ログイン画面
+- ブランドカラー（青 #1A67A3）を基調としたモダンなデザイン
+- 開発モード用のテストアカウント選択機能
+
+### プロジェクト一覧
+- リスト/グリッドビュー切り替え
+- プロジェクトステータス表示（Active/Planning/OnHold/Done/Archived）
+
+### WBSテーブル + ガントチャート
+- **スプリットビュー**: 左にWBSテーブル、右にガントチャート
+- **WBSテーブル**: ID/Type/Subject/Status/Start/End/Duration/Progress列
+- **ガントチャート**: 日/週/月ズーム、依存矢印、今日線
+
+---
+
+## 🚀 主な機能
+
+### ✅ 実装済み（MVP）
+
+| カテゴリ | 機能 |
+|---------|------|
+| **認証** | Microsoft Entra ID OIDC対応（開発モードはモック認証） |
+| **認可** | プロジェクト単位RBAC（Admin/PM/Manager/Contributor/Viewer） |
+| **プロジェクト管理** | 作成・一覧・詳細・更新 |
+| **WBS（階層タスク）** | CRUD、階層表示、展開/折りたたみ |
+| **ガントチャート** | 日/週/月ズーム、バー表示、マイルストーン◆ |
+| **依存関係** | FS（Finish→Start）、ラグ日数、循環検出、矢印表示 |
+| **スケジュール自動調整** | 依存関係に基づく日程自動計算（ON/OFF切替可） |
+| **進捗管理** | 進捗率(%) + ステータス（未着手/進行中/ブロック/完了） |
+| **工数管理** | 見積人日(PD) + 実績工数ログ |
+| **ベースライン** | スナップショット作成 + 差分比較 |
+| **コメント** | タスクへのコメント機能 |
+| **変更履歴** | フィールド単位の変更追跡 |
+| **Teams通知** | Incoming Webhookによる通知 |
+| **Excel出力** | プロジェクトレポートのxlsx出力 |
+| **成果物管理** | URL紐づけ |
+
+---
+
+## 🛠️ 技術スタック
+
+| レイヤー | 技術 |
+|---------|------|
+| **フロントエンド** | Next.js 14 (App Router) + React 18 + TypeScript |
+| **スタイリング** | Tailwind CSS + カスタムCSS |
+| **状態管理** | Zustand + TanStack Query |
+| **バックエンドAPI** | NestJS + TypeScript |
+| **ORM** | Prisma |
+| **データベース** | SQLite（開発）/ Azure SQL（本番） |
+| **認証** | Microsoft Entra ID（本番）/ モック認証（開発） |
+
+---
+
+## 📁 プロジェクト構成
 
 ```
 wbs-progress-management/
-├── api/                    # NestJS Backend API
-│   ├── prisma/             # Database schema & migrations
-│   │   ├── schema.prisma   # Prisma schema
-│   │   └── seed.ts         # Seed data
+├── api/                        # NestJS バックエンドAPI
+│   ├── prisma/
+│   │   ├── schema.prisma       # データベーススキーマ
+│   │   └── seed.ts             # シードデータ
 │   ├── src/
-│   │   ├── auth/           # Authentication (Entra ID / Mock)
-│   │   ├── projects/       # Project management
-│   │   ├── tasks/          # WBS task management
-│   │   ├── dependencies/   # Task dependencies
-│   │   ├── baselines/      # Baseline snapshots
-│   │   ├── timelogs/       # Time logging
-│   │   ├── comments/       # Comments & mentions
-│   │   ├── deliverables/   # Deliverable URLs
-│   │   ├── teams/          # Teams integration
-│   │   ├── export/         # Excel export
-│   │   └── changelog/      # Audit trail
+│   │   ├── auth/               # 認証モジュール
+│   │   ├── projects/           # プロジェクト管理
+│   │   ├── tasks/              # タスク（WBS）管理
+│   │   ├── dependencies/       # 依存関係管理
+│   │   ├── baselines/          # ベースライン管理
+│   │   ├── timelogs/           # 工数ログ
+│   │   ├── comments/           # コメント
+│   │   ├── deliverables/       # 成果物
+│   │   ├── teams/              # Teams連携
+│   │   ├── export/             # Excel出力
+│   │   └── changelog/          # 変更履歴
 │   └── package.json
-├── web/                    # Next.js Frontend
+│
+├── web/                        # Next.js フロントエンド
 │   ├── src/
-│   │   ├── app/            # App Router pages
-│   │   ├── components/     # React components
-│   │   ├── lib/            # Utilities & stores
-│   │   └── types/          # TypeScript types
+│   │   ├── app/                # App Routerページ
+│   │   │   ├── login/          # ログインページ
+│   │   │   ├── projects/       # プロジェクト一覧・詳細
+│   │   │   └── layout.tsx      # ルートレイアウト
+│   │   ├── components/
+│   │   │   ├── layout/         # サイドバー・ヘッダー
+│   │   │   ├── wbs/            # WBSテーブル
+│   │   │   ├── gantt/          # ガントチャート
+│   │   │   └── task/           # タスク詳細パネル
+│   │   ├── lib/                # ユーティリティ・ストア
+│   │   └── types/              # TypeScript型定義
 │   └── package.json
-└── package.json            # Root (monorepo)
+│
+├── ecosystem.config.cjs        # PM2設定
+└── package.json                # ルート（モノレポ）
 ```
 
-## URLs
+---
 
-### Development
-- **Frontend**: http://localhost:3000
-- **API**: http://localhost:4000/api
-- **Swagger Docs**: http://localhost:4000/api/docs
+## 🖥️ 開発環境セットアップ
 
-### Test Accounts (Development Mode)
-| Email | Role |
-|-------|------|
-| admin@example.com | Admin |
-| pm@example.com | Project Manager |
-| dev@example.com | Developer |
-
-## Getting Started
-
-### Prerequisites
+### 前提条件
 - Node.js >= 18.0.0
 - npm >= 9.0.0
 
-### Installation
+### インストール
 
 ```bash
-# Install dependencies
+# リポジトリをクローン
+git clone https://github.com/se-ya-sf/dev-testapps.git
+cd dev-testapps
+
+# 依存パッケージのインストール
 npm install
 
-# Setup database
+# データベースのセットアップ
 cd api
-npm run db:generate
-npm run db:push
-npm run db:seed
+npm run db:generate    # Prisma Clientの生成
+npm run db:push        # スキーマをDBに反映
+npm run db:seed        # テストデータの投入
 cd ..
 ```
 
-### Development
+### 開発サーバーの起動
 
 ```bash
-# Start both API and Web
+# API + Web を同時起動
 npm run dev
 
-# Or start individually
-npm run dev:api    # API on port 4000
-npm run dev:web    # Web on port 3000
+# または個別に起動
+npm run dev:api    # API: http://localhost:4000
+npm run dev:web    # Web: http://localhost:3000
 ```
 
-### Build
+### ビルド
 
 ```bash
 npm run build
 ```
 
-## API Endpoints
+---
 
-### Auth
-- `GET /api/me` - Get current user profile
-- `POST /api/auth/dev-login` - Development login
+## 🔗 URL一覧
 
-### Projects
-- `GET /api/projects` - List projects
-- `POST /api/projects` - Create project
-- `GET /api/projects/:id` - Get project detail
-- `PATCH /api/projects/:id` - Update project
+### 開発環境
+| サービス | URL |
+|---------|-----|
+| フロントエンド | http://localhost:3000 |
+| バックエンドAPI | http://localhost:4000/api |
+| Swagger API仕様書 | http://localhost:4000/api/docs |
 
-### Members
-- `GET /api/projects/:id/members` - List members
-- `POST /api/projects/:id/members` - Add member
-- `PATCH /api/projects/:id/members/:userId` - Update role
+### テストアカウント（開発モード）
 
-### Tasks
-- `GET /api/projects/:id/tasks` - List tasks
-- `POST /api/projects/:id/tasks` - Create task
-- `GET /api/tasks/:id` - Get task detail
-- `PATCH /api/tasks/:id` - Update task
-- `DELETE /api/tasks/:id` - Delete task
-- `POST /api/tasks/:id/move` - Move task
+| メールアドレス | ロール | 権限 |
+|---------------|-------|------|
+| admin@example.com | Admin | 全権限 |
+| pm@example.com | Project Manager | プロジェクト管理権限 |
+| dev@example.com | Developer | タスク編集権限 |
 
-### Dependencies
-- `GET /api/projects/:id/dependencies` - List dependencies
-- `POST /api/projects/:id/dependencies` - Create dependency
-- `DELETE /api/dependencies/:id` - Delete dependency
+---
 
-### Baselines
-- `GET /api/projects/:id/baselines` - List baselines
-- `POST /api/projects/:id/baselines` - Create baseline
-- `GET /api/baselines/:id/diff?compare=current` - Get diff
+## 📡 API エンドポイント
 
-### Time Logs
-- `GET /api/tasks/:id/time-logs` - List time logs
-- `POST /api/tasks/:id/time-logs` - Create time log
+### 認証
+| メソッド | エンドポイント | 説明 |
+|---------|---------------|------|
+| GET | `/api/me` | ログインユーザー情報取得 |
+| POST | `/api/auth/dev-login` | 開発用ログイン |
 
-### Comments
-- `GET /api/tasks/:id/comments` - List comments
-- `POST /api/tasks/:id/comments` - Create comment
-- `DELETE /api/comments/:id` - Delete comment
+### プロジェクト
+| メソッド | エンドポイント | 説明 |
+|---------|---------------|------|
+| GET | `/api/projects` | プロジェクト一覧 |
+| POST | `/api/projects` | プロジェクト作成 |
+| GET | `/api/projects/:id` | プロジェクト詳細 |
+| PATCH | `/api/projects/:id` | プロジェクト更新 |
 
-### History
-- `GET /api/tasks/:id/history` - List change history
+### タスク（WBS）
+| メソッド | エンドポイント | 説明 |
+|---------|---------------|------|
+| GET | `/api/projects/:id/tasks` | タスク一覧 |
+| POST | `/api/projects/:id/tasks` | タスク作成 |
+| GET | `/api/tasks/:id` | タスク詳細 |
+| PATCH | `/api/tasks/:id` | タスク更新 |
+| DELETE | `/api/tasks/:id` | タスク削除（論理削除） |
+| POST | `/api/tasks/:id/move` | タスク移動 |
 
-### Export
-- `POST /api/projects/:id/export/excel` - Export to Excel
+### 依存関係
+| メソッド | エンドポイント | 説明 |
+|---------|---------------|------|
+| GET | `/api/projects/:id/dependencies` | 依存関係一覧 |
+| POST | `/api/projects/:id/dependencies` | 依存関係作成 |
+| DELETE | `/api/dependencies/:id` | 依存関係削除 |
 
-### Teams
-- `PUT /api/projects/:id/teams-setting` - Upsert Teams settings
-- `POST /api/projects/:id/teams-setting/test` - Test webhook
+### その他
+| メソッド | エンドポイント | 説明 |
+|---------|---------------|------|
+| GET/POST | `/api/tasks/:id/time-logs` | 工数ログ |
+| GET/POST | `/api/tasks/:id/comments` | コメント |
+| GET | `/api/tasks/:id/history` | 変更履歴 |
+| GET/POST | `/api/projects/:id/baselines` | ベースライン |
+| POST | `/api/projects/:id/export/excel` | Excel出力 |
 
-## Data Models
+---
 
-### Core Entities
-- **User**: Entra ID連携ユーザー
-- **Project**: プロジェクト (autoSchedule設定あり)
-- **ProjectMember**: プロジェクトメンバー (RBAC)
-- **Task**: WBSタスク (task/summary/milestone)
-- **Dependency**: タスク依存関係 (FS + lag)
-- **TimeLog**: 工数実績
-- **Baseline/BaselineTask**: ベースラインスナップショット
-- **Comment**: コメント (@mention対応)
-- **ChangeLog**: 変更履歴
-- **Deliverable**: 成果物URL
-- **TeamsSetting**: Teams Webhook設定
-- **IntegrationLog**: 連携ログ
+## 📊 データモデル
 
-## Deployment
+### 主要エンティティ
 
-### Azure Deployment (Production)
+| エンティティ | 説明 |
+|-------------|------|
+| **User** | ユーザー（Entra ID連携） |
+| **Project** | プロジェクト（autoSchedule設定含む） |
+| **ProjectMember** | プロジェクトメンバー（RBAC） |
+| **Task** | WBSタスク（task/summary/milestone） |
+| **Dependency** | タスク依存関係（FS + lagDays） |
+| **TimeLog** | 工数実績ログ |
+| **Baseline** | ベースラインスナップショット |
+| **Comment** | タスクコメント |
+| **ChangeLog** | 変更履歴 |
+| **Deliverable** | 成果物URL |
+| **TeamsSetting** | Teams Webhook設定 |
 
-1. **Azure SQL Database**: 
-   - Update `DATABASE_URL` in `.env`
-   - Run `npx prisma migrate deploy`
+### タスクタイプ
+- `task` - 通常タスク（📋）
+- `summary` - フェーズ/サマリー（📁）
+- `milestone` - マイルストーン（◆）
 
-2. **Azure App Service (API)**:
-   - Deploy `api/` folder
-   - Set environment variables
+### タスクステータス
+- `NotStarted` - 未着手
+- `InProgress` - 進行中
+- `Blocked` - ブロック中
+- `Done` - 完了
 
-3. **Azure App Service (Web)**:
-   - Deploy `web/` folder
-   - Set `NEXT_PUBLIC_API_URL`
+---
 
-4. **Entra ID Configuration**:
-   - Set `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`
-   - Set `AUTH_MODE=entra`
+## 🚀 本番デプロイ（Azure）
 
-## Next Steps (Recommended)
+### 1. Azure SQL Database
+```bash
+# DATABASE_URLを本番用に更新
+DATABASE_URL="sqlserver://..."
 
-1. **UI/UX改善**
-   - ドラッグ&ドロップでタスク並び替え
-   - ガントバーのドラッグで日付変更
-   - タスクフィルタ（担当者、ステータス、遅延）
+# マイグレーション実行
+npx prisma migrate deploy
+```
 
-2. **機能追加**
-   - 担当者の自動補完UI
-   - 成果物管理UI
-   - ベースライン差分の可視化
+### 2. Azure App Service（API）
+- `api/` フォルダをデプロイ
+- 環境変数を設定:
+  - `DATABASE_URL`
+  - `JWT_SECRET`
+  - `AUTH_MODE=entra`
+  - `ENTRA_TENANT_ID`
+  - `ENTRA_CLIENT_ID`
+  - `ENTRA_CLIENT_SECRET`
 
-3. **バッチジョブ**
-   - 期限超過通知の定期実行
-   - Azure Functions / Cron job
+### 3. Azure App Service（Web）
+- `web/` フォルダをデプロイ
+- 環境変数を設定:
+  - `NEXT_PUBLIC_API_URL`
 
-4. **テスト**
-   - Unit tests
-   - E2E tests
+---
 
-## License
+## 📝 今後の開発予定
 
-Proprietary - Internal Use Only
+### UI/UX改善
+- [ ] ドラッグ&ドロップでタスク並び替え
+- [ ] ガントバーのドラッグで日程変更
+- [ ] タスクフィルタ（担当者、ステータス、遅延）
+- [ ] カラムのリサイズ・並び替え
+
+### 機能追加
+- [ ] 担当者アサイン機能
+- [ ] 成果物管理UI
+- [ ] ベースライン差分の可視化
+- [ ] ダッシュボード画面
+
+### インフラ
+- [ ] CI/CD パイプライン構築
+- [ ] 自動テスト（Unit / E2E）
+- [ ] 期限超過通知のバッチジョブ
+
+---
+
+## 📄 ライセンス
+
+Proprietary - 社内利用限定
+
+---
+
+## 🤝 開発者向け情報
+
+### コミット規約
+```
+feat: 新機能追加
+fix: バグ修正
+docs: ドキュメント更新
+style: コードスタイル修正
+refactor: リファクタリング
+test: テスト追加・修正
+chore: その他
+```
+
+### ブランチ戦略
+- `main` - 本番環境
+- `develop` - 開発環境
+- `feature/*` - 機能開発
+- `fix/*` - バグ修正
